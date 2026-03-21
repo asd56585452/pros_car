@@ -168,3 +168,17 @@ class DataProcessor:
             return received_global_plan_msg
         else:
             return None
+    
+    def get_processed_cmd_vel(self):
+        """
+        獲取並解析 /cmd_vel，回傳線速度與角速度
+        """
+        cmd_vel_msg = self.ros_communicator.get_latest_cmd_vel()
+        
+        if cmd_vel_msg is not None:
+            linear_x = cmd_vel_msg.linear.x
+            angular_z = cmd_vel_msg.angular.z
+            return 0.0, angular_z
+        else:
+            # 如果還沒收到 Nav2 的指令，預設停止
+            return 0.0, 0.0

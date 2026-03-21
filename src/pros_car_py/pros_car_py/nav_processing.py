@@ -155,6 +155,53 @@ class Nav2Processing:
 
     def filter_negative_one(self, depth_list):
         return [depth for depth in depth_list if depth != -1.0]
+    
+    def get_wheel_speeds_from_cmd_vel(self, track_width=0.2875, wheel_radius=0.04940625, unit='deg_s'):
+        """
+        將 /cmd_vel 的線速度與角速度，轉換為四輪轉速
+        :param track_width: 輪距 (公尺)
+        :param wheel_radius: 輪胎半徑 (公尺)
+        :param unit: 輸出單位 ('m_s' 線速度, 'rad_s' 弧度角速度, 'deg_s' 角度角速度)
+        """
+        linear_x, angular_z = self.data_processor.get_processed_cmd_vel()
+        
+        # 如果 Nav2 沒有下達速度指令 (或者還沒啟動)
+        if linear_x == 0.0 and angular_z == 0.0:
+            return [0.0, 0.0, 0.0, 0.0]
+            
+        # 1. 先計算出左右輪胎的「切線線速度」 (m/s)
+        left_linear_speed = linear_x - (angular_z * track_width / 2.0)
+        right_linear_speed = linear_x + (angular_z * track_width / 2.0)
+        
+        # 2. 依照指定的單位進行轉換
+        if unit == 'm_s':
+            # 保持公尺/秒
+            left_speed = left_linear_speed
+            right_speed = right_linear_speed
+            
+        elif unit == 'rad_s':
+            # 轉換為弧度/秒 (rad/s) = v / r
+            left_speed = left_linear_speed / wheel_radius
+            right_speed = right_linear_speed / wheel_radius
+            
+        elif unit == 'deg_s':
+            # 轉換為角度/秒 (deg/s) = (v / r) * (180 / pi)
+            left_speed = (left_linear_speed / wheel_radius) * (180.0 / math.pi)
+            right_speed = (right_linear_speed / wheel_radius) * (180.0 / math.pi)
+            
+        else:
+            left_speed = left_linear_speed
+            right_speed = right_linear_speed
+        
+        # 3. 組裝成 4 輪陣列: [左後, 右後, 左前, 右前]
+        wheel_velocities = [
+            left_speed,   # rear_left
+            right_speed,  # rear_right
+            left_speed,   # front_left
+            right_speed   # front_right
+        ]
+        
+        return wheel_velocities
 
     def camera_nav(self):
         """

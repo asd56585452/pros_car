@@ -27,6 +27,17 @@ class CarController:
             [3.202388878639925, 3.893176401328583],
         ]
 
+        # ==========================================
+        # 定義車體物理參數 (可依照 Unity 或實體車修改)
+        # ==========================================
+        self.track_width = 0.2875 * 3.38    # 車寬 (m) * 補償係數
+        self.wheel_diameter = 0.0988125     # 車輪直徑 (m)
+        self.wheel_radius = self.wheel_diameter / 2.0
+        
+        # 選擇要發送出去的速度單位 ('m_s', 'rad_s', 'deg_s')
+        # Unity 的 ArticulationDrive 需要 deg_s
+        self.wheel_speed_unit = 'deg_s'
+
     def update_action(self, action_key):
         """
         Updates the velocity for each of the car's wheels.
@@ -154,6 +165,25 @@ class CarController:
 
             elif mode == "custom_nav":
                 action_key = self.nav_processing.camera_nav_unity()
+            
+            # ======= 新增的目標導航模式 (純粹聽從 Nav2) =======
+            elif mode == "target_auto_nav_new":
+                
+                # 直接向 nav_processing 索取計算好的四輪速度 (傳入車體參數)
+                wheel_speeds = self.nav_processing.get_wheel_speeds_from_cmd_vel(
+                    track_width=self.track_width,
+                    wheel_radius=self.wheel_radius,
+                    unit=self.wheel_speed_unit
+                )
+                
+                if not self._thread_running:
+                    wheel_speeds = [0.0, 0.0, 0.0, 0.0] 
+                    
+                # print(f"Nav2 Cmd -> Speeds: {wheel_speeds}")
+                self.ros_communicator.publish_raw_car_control(wheel_speeds)
+                
+                time.sleep(0.05)
+                continue
 
             if self._thread_running == False:
                 action_key = "STOP"

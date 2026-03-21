@@ -15,6 +15,7 @@ from nav2_msgs.srv import ClearEntireCostmap
 from rclpy.action import ActionClient
 from nav2_msgs.action import NavigateToPose
 import rclpy
+from geometry_msgs.msg import Twist
 
 
 class RosCommunicator(Node):
@@ -89,6 +90,11 @@ class RosCommunicator(Node):
             "/camera/x_multi_depth_values",
             self.camera_x_multi_depth_callback,
             10,
+        )
+
+        self.latest_cmd_vel = None
+        self.subscriber_cmd_vel = self.create_subscription(
+            Twist, "/cmd_vel", self.subscriber_cmd_vel_callback, 10
         )
 
         # publish car_C_rear_wheel and car_C_front_wheel
@@ -211,6 +217,28 @@ class RosCommunicator(Node):
             self.get_logger().warn("No received global plan data received yet.")
             return None
         return self.latest_received_global_plan
+    
+    def subscriber_cmd_vel_callback(self, msg):
+        self.latest_cmd_vel = msg
+
+    def get_latest_cmd_vel(self):
+        return self.latest_cmd_vel
+
+    # 4. 新增一個「直接發布數值」的方法 (繞過 ACTION_MAPPINGS)
+    def publish_raw_car_control(self, velocities, publish_rear=True, publish_front=True):
+        """
+        直接發布四輪速度，不透過字串對應表。
+        velocities 格式預期為: [rear_left, rear_right, front_left, front_right]
+        """
+        msg = Float32MultiArray()
+        
+        if publish_rear:
+            msg.data = [float(velocities[0]), float(velocities[1])]
+            self.publisher_rear.publish(msg)
+            
+        if publish_front:
+            msg.data = [float(velocities[2]), float(velocities[3])]
+            self.publisher_forward.publish(msg)
 
     def publish_car_control(self, action_key, publish_rear=True, publish_front=True):
         msg = Float32MultiArray()
