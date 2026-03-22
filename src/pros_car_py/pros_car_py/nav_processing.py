@@ -353,12 +353,12 @@ class Nav2Processing:
 
         if all(depth > limit_distance for depth in camera_forward_depth):
             if yolo_target_info[0] == 1:
-                if yolo_target_info[2] > 200.0:
+                if yolo_target_info[2] > 10.0:
                     action = "CLOCKWISE_ROTATION_SLOW"
-                elif yolo_target_info[2] < -200.0:
+                elif yolo_target_info[2] < -10.0:
                     action = "COUNTERCLOCKWISE_ROTATION_SLOW"
                 else:
-                    if yolo_target_info[1] < 0.8:
+                    if yolo_target_info[1] < 0.4:
                         action = "STOP"
                     else:
                         action = "FORWARD_SLOW"

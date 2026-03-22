@@ -25,14 +25,14 @@ class RosCommunicator(Node):
         # subscribeamcl_pose
         self.latest_amcl_pose = None
         self.subscriber_amcl = self.create_subscription(
-            PoseWithCovarianceStamped, "/amcl_pose", self.subscriber_amcl_callback, 10
+            PoseWithCovarianceStamped, "/amcl_pose", self.subscriber_amcl_callback, 1
         )
 
         # subscribe goal_pose
         self.latest_goal_pose = None
         self.target_pose = None
         self.subscriber_goal = self.create_subscription(
-            PoseStamped, "/goal_pose", self.subscriber_goal_callback, 1
+            PoseStamped, "/goal_pose", self.subscriber_goal_callback, 10
         )
 
         # subscribe lidar
@@ -82,7 +82,7 @@ class RosCommunicator(Node):
 
         self.latest_yolo_target_info = None
         self.yolo_target_info_sub = self.create_subscription(
-            Float32MultiArray, "/yolo/target_info", self.yolo_target_info_callback, 10
+            Float32MultiArray, "/yolo/target_info", self.yolo_target_info_callback, 1
         )
 
         self.latest_camera_x_multi_depth = None
@@ -95,7 +95,7 @@ class RosCommunicator(Node):
 
         self.latest_cmd_vel = None
         self.subscriber_cmd_vel = self.create_subscription(
-            Twist, "/cmd_vel", self.subscriber_cmd_vel_callback, 10
+            Twist, "/cmd_vel", self.subscriber_cmd_vel_callback, 1
         )
 
         # publish car_C_rear_wheel and car_C_front_wheel
@@ -199,7 +199,7 @@ class RosCommunicator(Node):
     def get_goal_pose(self):
         """提供給 nav_processing 索取完整的目標姿態"""
         return self.latest_goal_pose
-        
+
     def get_latest_goal(self):
         if self.target_pose is None:
             self.get_logger().warn("No goal pose data received yet.")

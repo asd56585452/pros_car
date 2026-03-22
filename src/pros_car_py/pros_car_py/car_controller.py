@@ -164,7 +164,7 @@ class CarController:
             # 發布控制指令
 
             elif mode == "custom_nav":
-                action_key = self.nav_processing.camera_nav_unity()
+                action_key = self.nav_processing.camera_nav()
             
             # ======= 新增的目標導航模式 (純粹聽從 Nav2) =======
             elif mode == "target_auto_nav_new":
@@ -175,6 +175,27 @@ class CarController:
 
             if self._thread_running == False:
                 action_key = "STOP"
+            
+            if "SLOW" in action_key:
+                print(f"微調脈衝: {action_key}")
+                
+                # 1. 發出動作指令，讓車子瞬間出力克服摩擦力
+                self.ros_communicator.publish_car_control(
+                    action_key, publish_rear=True, publish_front=True
+                )
+                
+                # 2. 允許車子轉動極短的時間 (0.05 ~ 0.1 秒，可依車體旋轉幅度微調)
+                time.sleep(0.08) 
+                
+                # 3. 立刻發出 STOP 煞車
+                self.ros_communicator.publish_car_control(
+                    "STOP", publish_rear=True, publish_front=True
+                )
+                
+                # 4. 停在原地等待 YOLO 處理最新畫面 (0.2 ~ 0.3 秒)
+                # 這能完美消除「視覺伺服延遲」造成的過衝！
+                time.sleep(0.25)
+                continue # 跳過下方的常規發布，進入下一次迴圈
             print(action_key)
             time.sleep(0.05)
             self.ros_communicator.publish_car_control(
