@@ -6,6 +6,7 @@ from pros_car_py.nav2_utils import (
     cal_distance,
 )
 import math
+import time
 
 
 class Nav2Processing:
@@ -23,6 +24,10 @@ class Nav2Processing:
         self.finishFlag = False
         self.recordFlag = 0
         self.goal_published_flag = False
+        self.stuck_duration = 0.0
+        self.backing_up_end_time = 0.0
+        self.last_position = None
+        self.last_yaw = None
 
     def finish_nav_process(self):
         self.finishFlag = True
@@ -31,48 +36,155 @@ class Nav2Processing:
     def get_finish_flag(self):
         return self.finishFlag
 
-    def get_action_from_nav2_plan(self, goal_coordinates=None):
+    def get_action_from_nav2_plan(self, goal_coordinates=None,target_distance_threshold=0.1,diff_angle_threshold=5.0):
+        # 1. 發布新目標
         if goal_coordinates is not None and not self.goal_published_flag:
             self.ros_communicator.publish_goal_pose(goal_coordinates)
             self.goal_published_flag = True
-        orientation_points, coordinates = (
-            self.data_processor.get_processed_received_global_plan()
-        )
-        action_key = "STOP"
-        if not orientation_points or not coordinates:
-            action_key = "STOP"
-        else:
-            try:
-                z, w = orientation_points[0]
-                plan_yaw = get_yaw_from_quaternion(z, w)
-                car_position, car_orientation = (
-                    self.data_processor.get_processed_amcl_pose()
-                )
-                car_orientation_z, car_orientation_w = (
-                    car_orientation[2],
-                    car_orientation[3],
-                )
-                goal_position = self.ros_communicator.get_latest_goal()
-                target_distance = cal_distance(car_position, goal_position)
-                if target_distance < 0.5:
-                    action_key = "STOP"
-                    self.finishFlag = True
+
+        # 2. 取得車體與路徑資料
+        car_pose = self.data_processor.get_processed_amcl_pose()
+        goal_position = self.ros_communicator.get_latest_goal()
+        plan_data = self.data_processor.get_processed_received_global_plan()
+
+        if not car_pose or not goal_position or not plan_data:
+            return "STOP"
+
+        car_position, car_orientation = car_pose
+        orientation_points, coordinates = plan_data
+
+        if not coordinates or not orientation_points:
+            return "STOP"
+
+        car_yaw = math.degrees(2.0 * math.atan2(car_orientation[2], car_orientation[3]))
+        target_distance = cal_distance(car_position, goal_position)
+
+       # ==========================================
+        # 階段 1：判定是否已經完美抵達 (避免抵達時誤判為卡住)
+        # ==========================================
+        is_arrived = False
+        goal_yaw = None
+        diff_angle_for_align = 0.0
+
+        if target_distance < target_distance_threshold:
+            # 嘗試取得目標姿態 (Yaw)
+            if goal_coordinates is not None and len(goal_coordinates) >= 3:
+                goal_yaw = goal_coordinates[2]
+            else:
+                try:
+                    goal_pose_msg = self.ros_communicator.get_goal_pose() 
+                    goal_z = goal_pose_msg.orientation.z
+                    goal_w = goal_pose_msg.orientation.w
+                    goal_yaw = math.degrees(2.0 * math.atan2(goal_z, goal_w))
+                except Exception as e:
+                    print(f"無法取得目標方向，略過旋轉: {e}")
+
+            # 檢查角度是否對齊
+            if goal_yaw is not None:
+                diff_angle_for_align = goal_yaw - car_yaw
+                while diff_angle_for_align > 180: diff_angle_for_align -= 360
+                while diff_angle_for_align < -180: diff_angle_for_align += 360
+
+                if abs(diff_angle_for_align) < diff_angle_threshold:
+                    is_arrived = True
+            else:
+                # 若沒有指定目標角度，距離小於 0.5m 就算抵達
+                is_arrived = True
+
+        if is_arrived:
+            self.finishFlag = True
+            self.ros_communicator.reset_nav2() 
+            self.stuck_duration = 0.0 # 清除卡住計時
+            return "STOP"
+
+
+        # ==========================================
+        # 階段 2：🌟 後退脫困機制 (加入旋轉判定)
+        # ==========================================
+        current_time = time.time()
+        
+        # 初始化卡住偵測變數
+        if not hasattr(self, 'backing_up_end_time'):
+            self.backing_up_end_time = 0.0
+            self.stuck_duration = 0.0
+            self.last_check_time = current_time
+            self.last_position = car_position
+            self.last_yaw = car_yaw
+
+        # 如果正在強制後退中，直接維持後退動作
+        if current_time < self.backing_up_end_time:
+            return "BACKWARD"
+        elif current_time < self.backing_up_end_time + 3.0:
+            return "STOP"
+
+        # 每 1 秒檢查一次狀態
+        if current_time - self.last_check_time > 1.0:
+            if self.last_position is not None and getattr(self, 'last_yaw', None) is not None:
+                dist_moved = cal_distance(self.last_position, car_position)
+                
+                # 計算這 1 秒內的角度變化量 (取絕對值)
+                yaw_diff = car_yaw - self.last_yaw
+                while yaw_diff > 180: yaw_diff -= 360
+                while yaw_diff < -180: yaw_diff += 360
+                yaw_changed = abs(yaw_diff)
+                
+                # 💡 終極卡住判定：
+                # 既然程式執行到這 (is_arrived == False)，代表車子「必須」要移動或旋轉。
+                # 如果它位移不到 3 公分「而且」旋轉不到 3 度，才代表它真的卡死了！
+                if dist_moved < 0.03 and yaw_changed < 3.0:
+                    self.stuck_duration += 1.0
                 else:
-                    car_yaw = get_yaw_from_quaternion(
-                        car_orientation_z, car_orientation_w
-                    )
-                    diff_angle = (plan_yaw - car_yaw) % 360.0
-                    if diff_angle < 30.0 or (diff_angle > 330 and diff_angle < 360):
-                        action_key = "FORWARD"
-                    elif diff_angle > 30.0 and diff_angle < 180.0:
-                        action_key = "COUNTERCLOCKWISE_ROTATION"
-                    elif diff_angle > 180.0 and diff_angle < 330.0:
-                        action_key = "CLOCKWISE_ROTATION"
-                    else:
-                        action_key = "STOP"
-            except:
-                action_key = "STOP"
-        return action_key
+                    # 只要有在正常前進，或是正常原地旋轉，就解除卡住警報
+                    self.stuck_duration = 0.0
+            
+            self.last_position = car_position
+            self.last_yaw = car_yaw
+            self.last_check_time = current_time
+
+        # 連續 3 秒卡死，觸發 1.5 秒的後退
+        if self.stuck_duration >= 3.0:
+            print("[Nav2Processing] ⚠️ 偵測到車體卡住 (無位移且無旋轉)！啟動後退脫困...")
+            self.backing_up_end_time = current_time + 3.0
+            self.stuck_duration = 0.0
+            return "BACKWARD"
+
+
+        # ==========================================
+        # 階段 3：決定一般導航動作
+        # ==========================================
+        if target_distance < target_distance_threshold:
+            # 距離夠近，但尚未抵達 (因為上面 is_arrived == False)，開始原地旋轉對齊
+            if diff_angle_for_align > 0:
+                return "COUNTERCLOCKWISE_ROTATION_SLOW"
+            else:
+                return "CLOCKWISE_ROTATION_SLOW"
+        else:
+            # 距離大於 0.5m，尋找路線前方目標點
+            target_x, target_y = None, None
+            for i in range(self.index, len(coordinates)):
+                tx, ty = coordinates[i]
+                if cal_distance(car_position, [tx, ty]) >= target_distance_threshold:
+                    target_x, target_y = tx, ty
+                    self.index = i 
+                    break
+
+            if target_x is None:
+                target_x, target_y = coordinates[-1]
+
+            target_pos = [target_x, target_y]
+            diff_angle = calculate_angle_point(
+                car_orientation[2], car_orientation[3], car_position[:2], target_pos
+            )
+
+            # 角度在正負 diff_angle_threshold 度內直走，否則原地轉向對準路線
+            if diff_angle < diff_angle_threshold and diff_angle > -diff_angle_threshold:
+                return "FORWARD"
+            elif diff_angle <= -diff_angle_threshold:
+                return "CLOCKWISE_ROTATION"
+            elif diff_angle >= diff_angle_threshold:
+                return "COUNTERCLOCKWISE_ROTATION"
+
+        return "STOP"
 
     def get_action_from_nav2_plan_no_dynamic_p_2_p(self, goal_coordinates=None):
         if goal_coordinates is not None and not self.goal_published_flag:

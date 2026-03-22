@@ -178,7 +178,7 @@ class DataProcessor:
         if cmd_vel_msg is not None:
             linear_x = cmd_vel_msg.linear.x
             angular_z = cmd_vel_msg.angular.z
-            return 0.0, angular_z
+            return linear_x, angular_z
         else:
             # 如果還沒收到 Nav2 的指令，預設停止
             return 0.0, 0.0

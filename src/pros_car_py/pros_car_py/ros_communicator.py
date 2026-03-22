@@ -29,6 +29,7 @@ class RosCommunicator(Node):
         )
 
         # subscribe goal_pose
+        self.latest_goal_pose = None
         self.target_pose = None
         self.subscriber_goal = self.create_subscription(
             PoseStamped, "/goal_pose", self.subscriber_goal_callback, 1
@@ -190,10 +191,15 @@ class RosCommunicator(Node):
 
     # goal callback and get_latest_goal
     def subscriber_goal_callback(self, msg):
+        self.latest_goal_pose = msg.pose
         position = msg.pose.position
         target = [position.x, position.y, position.z]
         self.target_pose = target
 
+    def get_goal_pose(self):
+        """提供給 nav_processing 索取完整的目標姿態"""
+        return self.latest_goal_pose
+        
     def get_latest_goal(self):
         if self.target_pose is None:
             self.get_logger().warn("No goal pose data received yet.")
