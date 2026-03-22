@@ -100,10 +100,10 @@ class RosCommunicator(Node):
 
         # publish car_C_rear_wheel and car_C_front_wheel
         self.publisher_rear = self.create_publisher(
-            Float32MultiArray, DeviceDataTypeEnum.car_C_rear_wheel, 10
+            Float32MultiArray, DeviceDataTypeEnum.car_C_rear_wheel, 1
         )
         self.publisher_forward = self.create_publisher(
-            Float32MultiArray, DeviceDataTypeEnum.car_C_front_wheel, 10
+            Float32MultiArray, DeviceDataTypeEnum.car_C_front_wheel, 1
         )
 
         # publish goal_pose
