@@ -19,6 +19,11 @@ class Nav2Processing:
         self.index_length = 0
         self.recordFlag = 0
         self.goal_published_flag = False
+        self.backing_up_end_time = 0.0
+        self.stuck_duration = 0.0
+        self.last_check_time = 0.0
+        self.last_position = None
+        self.last_yaw = None
 
     def reset_nav_process(self):
         self.finishFlag = False
@@ -26,6 +31,7 @@ class Nav2Processing:
         self.goal_published_flag = False
         self.stuck_duration = 0.0
         self.backing_up_end_time = 0.0
+        self.last_check_time = 0.0
         self.last_position = None
         self.last_yaw = None
 
@@ -103,18 +109,11 @@ class Nav2Processing:
         # ==========================================
         current_time = time.time()
         
-        # 初始化卡住偵測變數
-        if not hasattr(self, 'backing_up_end_time'):
-            self.backing_up_end_time = 0.0
-            self.stuck_duration = 0.0
-            self.last_check_time = current_time
-            self.last_position = car_position
-            self.last_yaw = car_yaw
 
         # 如果正在強制後退中，直接維持後退動作
         if current_time < self.backing_up_end_time:
             return "BACKWARD"
-        elif current_time < self.backing_up_end_time + 3.0:
+        elif current_time < self.backing_up_end_time + 7.0:
             return "STOP"
 
         # 每 1 秒檢查一次狀態
@@ -142,7 +141,7 @@ class Nav2Processing:
             self.last_check_time = current_time
 
         # 連續 3 秒卡死，觸發 1.5 秒的後退
-        if self.stuck_duration >= 3.0:
+        if self.stuck_duration >= 10.0:
             print("[Nav2Processing] ⚠️ 偵測到車體卡住 (無位移且無旋轉)！啟動後退脫困...")
             self.backing_up_end_time = current_time + 3.0
             self.stuck_duration = 0.0
@@ -362,12 +361,12 @@ class Nav2Processing:
                         action = "STOP"
                     else:
                         action = "FORWARD_SLOW"
-            else:
-                action = "FORWARD"
-        elif any(depth < limit_distance for depth in camera_left_depth):
-            action = "CLOCKWISE_ROTATION"
-        elif any(depth < limit_distance for depth in camera_right_depth):
-            action = "COUNTERCLOCKWISE_ROTATION"
+            # else:
+            #     action = "STOP"
+        # elif any(depth < limit_distance for depth in camera_left_depth):
+        #     action = "CLOCKWISE_ROTATION"
+        # elif any(depth < limit_distance for depth in camera_right_depth):
+        #     action = "COUNTERCLOCKWISE_ROTATION"
         return action
 
     def camera_nav_unity(self):

@@ -70,7 +70,7 @@ class AutoNavMode(BaseMode):
 
 
 class AutoArmMode(BaseMode):
-    submodes = ["auto_arm_human"]
+    submodes = ["auto_arm_control"]
 
     def enter(self):
         self.app.horizontal_select(self.submodes, self.handle_submode_select)

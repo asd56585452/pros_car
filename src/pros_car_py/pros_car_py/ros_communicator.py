@@ -154,6 +154,37 @@ class RosCommunicator(Node):
             self, NavigateToPose, "/navigate_to_pose"
         )
 
+        # ======== 在 __init__ 裡面新增 ========
+        # 訂閱 YOLO 算出的目標 3D 位置 Marker
+        self.latest_yolo_marker = None
+        self.subscriber_yolo_marker = self.create_subscription(
+            Marker, "/yolo/target_marker", self.yolo_target_marker_callback, 10
+        )
+        
+        # 發布手臂關節視覺化線條
+        self.publisher_arm_visual = self.create_publisher(
+            Marker, "/arm_visual_lines", 10
+        )
+        
+        self.subscriber_clicked_point = self.create_subscription(
+            PointStamped, "/clicked_point", self.clicked_point_callback, 10
+        )
+
+    # 新增 callback
+    def clicked_point_callback(self, msg):
+        # 為了偷懶，我們直接把它偽裝成 YOLO marker 塞給系統
+        mock_marker = Marker()
+        mock_marker.header = msg.header
+        mock_marker.pose.position = msg.point
+        self.latest_yolo_marker = mock_marker
+
+    # ======== 在 class 內新增這兩個函式 ========
+    def yolo_target_marker_callback(self, msg):
+        self.latest_yolo_marker = msg
+
+    def publish_arm_visual_lines(self, marker_msg):
+        self.publisher_arm_visual.publish(marker_msg)
+
     def clear_received_global_plan(self):
         """
         清空 /received_global_plan 话题
