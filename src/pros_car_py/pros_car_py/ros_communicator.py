@@ -15,6 +15,7 @@ from nav2_msgs.srv import ClearEntireCostmap
 from rclpy.action import ActionClient
 from nav2_msgs.action import NavigateToPose
 import rclpy
+from geometry_msgs.msg import Twist
 
 
 class RosCommunicator(Node):
@@ -24,13 +25,14 @@ class RosCommunicator(Node):
         # subscribeamcl_pose
         self.latest_amcl_pose = None
         self.subscriber_amcl = self.create_subscription(
-            PoseWithCovarianceStamped, "/amcl_pose", self.subscriber_amcl_callback, 10
+            PoseWithCovarianceStamped, "/amcl_pose", self.subscriber_amcl_callback, 1
         )
 
         # subscribe goal_pose
+        self.latest_goal_pose = None
         self.target_pose = None
         self.subscriber_goal = self.create_subscription(
-            PoseStamped, "/goal_pose", self.subscriber_goal_callback, 1
+            PoseStamped, "/goal_pose", self.subscriber_goal_callback, 10
         )
 
         # subscribe lidar
@@ -80,7 +82,7 @@ class RosCommunicator(Node):
 
         self.latest_yolo_target_info = None
         self.yolo_target_info_sub = self.create_subscription(
-            Float32MultiArray, "/yolo/target_info", self.yolo_target_info_callback, 10
+            Float32MultiArray, "/yolo/target_info", self.yolo_target_info_callback, 1
         )
 
         self.latest_camera_x_multi_depth = None
@@ -91,12 +93,17 @@ class RosCommunicator(Node):
             10,
         )
 
+        self.latest_cmd_vel = None
+        self.subscriber_cmd_vel = self.create_subscription(
+            Twist, "/cmd_vel", self.subscriber_cmd_vel_callback, 1
+        )
+
         # publish car_C_rear_wheel and car_C_front_wheel
         self.publisher_rear = self.create_publisher(
-            Float32MultiArray, DeviceDataTypeEnum.car_C_rear_wheel, 10
+            Float32MultiArray, DeviceDataTypeEnum.car_C_rear_wheel, 1
         )
         self.publisher_forward = self.create_publisher(
-            Float32MultiArray, DeviceDataTypeEnum.car_C_front_wheel, 10
+            Float32MultiArray, DeviceDataTypeEnum.car_C_front_wheel, 1
         )
 
         # publish goal_pose
@@ -147,6 +154,53 @@ class RosCommunicator(Node):
             self, NavigateToPose, "/navigate_to_pose"
         )
 
+        # ======== 在 __init__ 裡面新增 ========
+        # 訂閱 YOLO 算出的目標 3D 位置 Marker
+        self.latest_yolo_marker = None
+        self.subscriber_yolo_marker = self.create_subscription(
+            Marker, "/yolo/target_marker", self.yolo_target_marker_callback, 10
+        )
+        
+        # 發布手臂關節視覺化線條
+        self.publisher_arm_visual = self.create_publisher(
+            Marker, "/arm_visual_lines", 10
+        )
+        
+        self.subscriber_clicked_point = self.create_subscription(
+            PointStamped, "/clicked_point", self.clicked_point_callback, 10
+        )
+
+        self.marker_pub = self.create_publisher(Marker, "/clicked_point_marker", 1)
+
+    # 新增 callback
+    def clicked_point_callback(self, msg):
+        # 為了偷懶，我們直接把它偽裝成 YOLO marker 塞給系統
+        mock_marker = Marker()
+        mock_marker.header = msg.header
+        mock_marker.header.stamp = self.get_clock().now().to_msg()
+        mock_marker.ns = 'yolo_target'
+        mock_marker.id = 0
+        mock_marker.type = Marker.SPHERE
+        mock_marker.action = Marker.ADD
+        mock_marker.pose.position = msg.point
+        mock_marker.pose.orientation.w = 1.0
+        mock_marker.scale.x = 0.08  # 網球大小約 8 公分
+        mock_marker.scale.y = 0.08
+        mock_marker.scale.z = 0.08
+        mock_marker.color.a = 1.0   # 不透明度
+        mock_marker.color.r = 0.8   # 螢光黃/綠色
+        mock_marker.color.g = 1.0
+        mock_marker.color.b = 0.0
+        self.latest_yolo_marker = mock_marker
+        self.marker_pub.publish(mock_marker)
+
+    # ======== 在 class 內新增這兩個函式 ========
+    def yolo_target_marker_callback(self, msg):
+        self.latest_yolo_marker = msg
+
+    def publish_arm_visual_lines(self, marker_msg):
+        self.publisher_arm_visual.publish(marker_msg)
+
     def clear_received_global_plan(self):
         """
         清空 /received_global_plan 话题
@@ -184,9 +238,14 @@ class RosCommunicator(Node):
 
     # goal callback and get_latest_goal
     def subscriber_goal_callback(self, msg):
+        self.latest_goal_pose = msg.pose
         position = msg.pose.position
         target = [position.x, position.y, position.z]
         self.target_pose = target
+
+    def get_goal_pose(self):
+        """提供給 nav_processing 索取完整的目標姿態"""
+        return self.latest_goal_pose
 
     def get_latest_goal(self):
         if self.target_pose is None:
@@ -211,6 +270,28 @@ class RosCommunicator(Node):
             self.get_logger().warn("No received global plan data received yet.")
             return None
         return self.latest_received_global_plan
+    
+    def subscriber_cmd_vel_callback(self, msg):
+        self.latest_cmd_vel = msg
+
+    def get_latest_cmd_vel(self):
+        return self.latest_cmd_vel
+
+    # 4. 新增一個「直接發布數值」的方法 (繞過 ACTION_MAPPINGS)
+    def publish_raw_car_control(self, velocities, publish_rear=True, publish_front=True):
+        """
+        直接發布四輪速度，不透過字串對應表。
+        velocities 格式預期為: [rear_left, rear_right, front_left, front_right]
+        """
+        msg = Float32MultiArray()
+        
+        if publish_rear:
+            msg.data = [float(velocities[0]), float(velocities[1])]
+            self.publisher_rear.publish(msg)
+            
+        if publish_front:
+            msg.data = [float(velocities[2]), float(velocities[3])]
+            self.publisher_forward.publish(msg)
 
     def publish_car_control(self, action_key, publish_rear=True, publish_front=True):
         msg = Float32MultiArray()

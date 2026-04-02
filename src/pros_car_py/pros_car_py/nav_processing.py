@@ -237,9 +237,9 @@ class Nav2Processing:
         """
         yolo_target_info = self.data_processor.get_yolo_target_info()
         camera_multi_depth = self.data_processor.get_camera_x_multi_depth()
-        yolo_target_info[1] *= 100.0
+        yolo_target_info[1] *= 1
         camera_multi_depth = list(
-            map(lambda x: x * 100.0, self.data_processor.get_camera_x_multi_depth())
+            map(lambda x: x * 1.0, self.data_processor.get_camera_x_multi_depth())
         )
 
         if camera_multi_depth == None or yolo_target_info == None:
