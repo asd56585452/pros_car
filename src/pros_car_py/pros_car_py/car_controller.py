@@ -3,7 +3,9 @@ from std_msgs.msg import String
 from pros_car_py.car_models import DeviceDataTypeEnum, CarCControl
 import threading
 import time
-
+import cv2
+import os
+from datetime import datetime
 
 class CarController:
 
@@ -71,6 +73,10 @@ class CarController:
             self.update_action("CLOCKWISE_ROTATION")
         elif key == "z":
             self.update_action("STOP")
+        elif key == "c":
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            file_name = f"src/pros_car_py/images/car_image_{timestamp}.jpg"
+            cv2.imwrite(file_name, self.ros_communicator.cv_image)
         elif key == "q":
             self.update_action("STOP")
             time.sleep(0.1)

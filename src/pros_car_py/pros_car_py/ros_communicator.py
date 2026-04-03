@@ -3,7 +3,7 @@ from pros_car_py.car_models import DeviceDataTypeEnum, CarCControl
 from geometry_msgs.msg import PoseWithCovarianceStamped, PoseStamped, Point
 from std_msgs.msg import String, Header
 from nav_msgs.msg import Path
-from sensor_msgs.msg import LaserScan, Imu
+from sensor_msgs.msg import LaserScan, Imu, CompressedImage
 from trajectory_msgs.msg import JointTrajectoryPoint
 import orjson
 from pros_car_py.ros_communicator_config import ACTION_MAPPINGS
@@ -16,6 +16,7 @@ from rclpy.action import ActionClient
 from nav2_msgs.action import NavigateToPose
 import rclpy
 from geometry_msgs.msg import Twist
+from cv_bridge import CvBridge
 
 
 class RosCommunicator(Node):
@@ -160,6 +161,12 @@ class RosCommunicator(Node):
         self.subscriber_yolo_marker = self.create_subscription(
             Marker, "/yolo/target_marker", self.yolo_target_marker_callback, 10
         )
+
+        self.cv_image = None
+        self.bridge = CvBridge()
+        self.image_sub = self.create_subscription(
+            CompressedImage, "/camera/image/compressed", self.image_callback, 1
+        )
         
         # 發布手臂關節視覺化線條
         self.publisher_arm_visual = self.create_publisher(
@@ -171,6 +178,17 @@ class RosCommunicator(Node):
         )
 
         self.marker_pub = self.create_publisher(Marker, "/clicked_point_marker", 1)
+    
+    def image_callback(self, msg):
+        """接收影像並進行物體檢測"""
+        # 將 ROS 影像消息轉換為 OpenCV 格式
+        try:
+            self.cv_image = self.bridge.compressed_imgmsg_to_cv2(
+                msg, desired_encoding="bgr8"
+            )
+        except Exception as e:
+            self.get_logger().error(f"Could not convert image: {e}")
+            return
 
     # 新增 callback
     def clicked_point_callback(self, msg):
