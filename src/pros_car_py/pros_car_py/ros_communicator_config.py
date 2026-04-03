@@ -11,10 +11,10 @@ vel, rotate_vel為自走車PID數值, 可於arduino程式碼查看
 """
 speed_ratio = 50
 vel = 4.0*speed_ratio
-vel_slow = 2.0*speed_ratio
+vel_slow = 3.0*speed_ratio
 rotate_vel = 6.0*speed_ratio
-rotate_vel_slow = 3.0*speed_ratio
-rotate_vel_median = 5.0*speed_ratio
+rotate_vel_slow = 5.0*speed_ratio
+rotate_vel_median = 5.5*speed_ratio
 ACTION_MAPPINGS = {
     "FORWARD": [vel, vel, vel, vel],  # 前進
     "FORWARD_SLOW": [vel_slow, vel_slow, vel_slow, vel_slow],  # 前進
